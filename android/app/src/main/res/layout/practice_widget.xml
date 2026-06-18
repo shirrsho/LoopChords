@@ -3,7 +3,7 @@
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="6dp">
+    android:padding="4dp">
 
     <!-- ===== Reminder state: warm orange→red (when 12h+ since practice) ===== -->
     <LinearLayout
@@ -13,19 +13,19 @@
         android:background="@drawable/widget_bg_reminder"
         android:orientation="horizontal"
         android:gravity="center"
-        android:padding="14dp"
+        android:padding="8dp"
         android:visibility="gone">
 
         <ImageView
-            android:layout_width="42dp"
-            android:layout_height="42dp"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
             android:src="@drawable/ic_widget_pick"
             android:contentDescription="@string/widget_description" />
 
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
+            android:layout_marginStart="10dp"
             android:orientation="vertical">
 
             <TextView
@@ -34,16 +34,15 @@
                 android:text="Time to practice!"
                 android:textColor="#FFFFFF"
                 android:textStyle="bold"
-                android:textSize="18sp" />
+                android:textSize="14sp" />
 
             <TextView
                 android:id="@+id/reminder_total"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
                 android:text="0m total"
                 android:textColor="#FFE6DC"
-                android:textSize="12sp" />
+                android:textSize="10sp" />
         </LinearLayout>
     </LinearLayout>
 
@@ -55,12 +54,12 @@
         android:background="@drawable/widget_bg_normal"
         android:orientation="horizontal"
         android:gravity="center"
-        android:padding="14dp"
+        android:padding="8dp"
         android:visibility="gone">
 
         <ImageView
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
             android:src="@drawable/ic_widget_pick"
             android:tint="#FF8A3D"
             android:contentDescription="@string/widget_description" />
@@ -68,7 +67,7 @@
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
+            android:layout_marginStart="10dp"
             android:orientation="vertical">
 
             <TextView
@@ -78,24 +77,15 @@
                 android:text="0m"
                 android:textColor="#FF8A3D"
                 android:textStyle="bold"
-                android:textSize="30sp" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="practised"
-                android:textColor="#9FB0C3"
-                android:textSize="12sp"
-                android:letterSpacing="0.05" />
+                android:textSize="20sp" />
 
             <TextView
                 android:id="@+id/ok_subtitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:text=""
-                android:textColor="#6E7B8C"
-                android:textSize="11sp" />
+                android:text="practised"
+                android:textColor="#9FB0C3"
+                android:textSize="10sp" />
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>
