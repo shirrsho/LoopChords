@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/chord.dart';
 import '../services/practice_reminder.dart';
 import '../widgets/chord_diagram.dart';
@@ -28,6 +29,10 @@ class _PlayScreenState extends State<PlayScreen>
   late AnimationController _progress;
   bool _paused = false;
 
+  // 3..2..1 countdown shown before practice starts (0 = practising).
+  int _countdown = 3;
+  Timer? _countdownTimer;
+
   // Total elapsed practice time (pauses while practice is paused).
   final Stopwatch _watch = Stopwatch();
   Timer? _ticker;
@@ -35,8 +40,9 @@ class _PlayScreenState extends State<PlayScreen>
   @override
   void initState() {
     super.initState();
-    // Keep the device in landscape-or-portrait but force full immersion so the
-    // big chord is the only thing on screen.
+    // Keep the screen on for the whole session, and hide system UI so the big
+    // chord is the only thing on screen.
+    WakelockPlus.enable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
     _current = _randomChord(exclude: null);
@@ -50,14 +56,24 @@ class _PlayScreenState extends State<PlayScreen>
           _advance();
         }
       });
-    _progress.forward();
 
+    // Run the countdown first; practice (timers + clock) begins after it.
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      setState(() => _countdown--);
+      if (_countdown <= 0) {
+        t.cancel();
+        _beginPractice();
+      }
+    });
+  }
+
+  void _beginPractice() {
     _watch.start();
+    _progress.forward();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {}); // refresh the elapsed-time display
     });
-
-    // Reaching the play screen counts as practising — clears the widget reminder.
+    // Starting a session clears the widget reminder.
     PracticeReminder.markPracticed();
   }
 
@@ -103,8 +119,12 @@ class _PlayScreenState extends State<PlayScreen>
 
   @override
   void dispose() {
+    // Record this session's length toward the lifetime total.
+    PracticeReminder.addSession(_watch.elapsed);
+    _countdownTimer?.cancel();
     _ticker?.cancel();
     _progress.dispose();
+    WakelockPlus.disable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
@@ -114,9 +134,11 @@ class _PlayScreenState extends State<PlayScreen>
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       backgroundColor: const Color(0xFF0E1116),
-      body: SafeArea(
-        child: Column(
-          children: [
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Column(
+              children: [
             // Timer progress bar across the top.
             AnimatedBuilder(
               animation: _progress,
@@ -184,6 +206,38 @@ class _PlayScreenState extends State<PlayScreen>
                   const Spacer(),
                   _nextPreview(scheme),
                 ],
+              ),
+            ),
+          ],
+            ),
+          ),
+          if (_countdown > 0) _countdownOverlay(scheme),
+        ],
+      ),
+    );
+  }
+
+  // Full-screen 3..2..1 countdown shown before the first chord.
+  Widget _countdownOverlay(ColorScheme scheme) {
+    return Positioned.fill(
+      child: Container(
+        color: const Color(0xFF0E1116),
+        alignment: Alignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Get ready',
+              style: TextStyle(color: Colors.white70, fontSize: 22, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '$_countdown',
+              style: TextStyle(
+                color: scheme.primary,
+                fontSize: 140,
+                fontWeight: FontWeight.w800,
+                height: 1.0,
               ),
             ),
           ],

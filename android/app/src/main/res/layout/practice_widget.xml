@@ -5,27 +5,27 @@
     android:layout_height="match_parent"
     android:padding="6dp">
 
-    <!-- ===== Reminder state: solid red (when 6h+ since practice) ===== -->
+    <!-- ===== Reminder state: warm orange→red (when 12h+ since practice) ===== -->
     <LinearLayout
         android:id="@+id/reminder_state"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@drawable/widget_bg_red_bright"
+        android:background="@drawable/widget_bg_reminder"
         android:orientation="vertical"
         android:gravity="center"
         android:padding="10dp"
         android:visibility="gone">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="🎸"
-            android:textSize="30sp" />
+        <ImageView
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:src="@drawable/ic_widget_pick"
+            android:contentDescription="@string/widget_description" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="7dp"
             android:text="Time to practice!"
             android:textColor="#FFFFFF"
             android:textStyle="bold"
@@ -33,49 +33,61 @@
             android:gravity="center" />
 
         <TextView
+            android:id="@+id/reminder_total"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:text="6h+ since last session"
-            android:textColor="#FFE3E1"
+            android:layout_marginTop="3dp"
+            android:text="0m total"
+            android:textColor="#FFE6DC"
             android:textSize="11sp"
             android:gravity="center" />
     </LinearLayout>
 
-    <!-- ===== OK state: calm, when recently practised ===== -->
+    <!-- ===== Normal state: dark card showing lifetime practice time ===== -->
     <LinearLayout
-        android:id="@+id/ok_state"
+        android:id="@+id/normal_state"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@drawable/widget_bg_calm"
+        android:background="@drawable/widget_bg_normal"
         android:orientation="vertical"
         android:gravity="center"
         android:padding="10dp"
         android:visibility="gone">
 
+        <ImageView
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:src="@drawable/ic_widget_pick"
+            android:tint="#FF8A3D"
+            android:contentDescription="@string/widget_description" />
+
         <TextView
+            android:id="@+id/total_time"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="🎸"
-            android:textSize="28sp" />
+            android:layout_marginTop="6dp"
+            android:text="0m"
+            android:textColor="#FF8A3D"
+            android:textStyle="bold"
+            android:textSize="26sp"
+            android:gravity="center" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="Keep it up!"
-            android:textColor="#FF8A3D"
-            android:textStyle="bold"
-            android:textSize="15sp"
+            android:text="practised"
+            android:textColor="#9FB0C3"
+            android:textSize="12sp"
+            android:letterSpacing="0.05"
             android:gravity="center" />
 
         <TextView
             android:id="@+id/ok_subtitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:text="Recently practised"
-            android:textColor="#9FB0C3"
+            android:layout_marginTop="5dp"
+            android:text=""
+            android:textColor="#6E7B8C"
             android:textSize="11sp"
             android:gravity="center" />
     </LinearLayout>
