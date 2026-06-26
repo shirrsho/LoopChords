@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/chord.dart';
+import '../services/metronome.dart';
 import '../services/practice_reminder.dart';
 import '../widgets/chord_diagram.dart';
 
@@ -14,10 +15,22 @@ class PlayScreen extends StatefulWidget {
   /// Optional fixed session length. When null, practice runs until stopped.
   final Duration? sessionLimit;
 
-  /// When non-null, chords play in order (looping) with one delay per chord —
-  /// `stepDelays[i]` is the seconds to wait after `chords[i]` before the next.
-  /// When null, chords appear randomly with [delaySeconds] between each.
+  /// When non-null, chords play in order (looping) with one value per chord.
+  /// In seconds mode this is the seconds after `chords[i]`; in tempo mode it is
+  /// the number of bars `chords[i]` lasts. When null, chords appear randomly.
   final List<int>? stepDelays;
+
+  /// Tempo (metronome) mode. When true, a click guides each beat and chords
+  /// change on the downbeat after their bar count.
+  final bool tempoMode;
+  final int bpm;
+  final int beatsPerBar;
+
+  /// Bars each chord lasts in tempo mode for the random (non-loop) modes.
+  final int barsPerChord;
+
+  /// Whether the screen-edge flash pulses on each beat (tempo mode).
+  final bool beatFlash;
 
   const PlayScreen({
     super.key,
@@ -25,6 +38,11 @@ class PlayScreen extends StatefulWidget {
     required this.delaySeconds,
     this.sessionLimit,
     this.stepDelays,
+    this.tempoMode = false,
+    this.bpm = 90,
+    this.beatsPerBar = 4,
+    this.barsPerChord = 1,
+    this.beatFlash = true,
   });
 
   @override
@@ -32,7 +50,7 @@ class PlayScreen extends StatefulWidget {
 }
 
 class _PlayScreenState extends State<PlayScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final Random _rng = Random();
   late Chord _current;
   late Chord _next;
@@ -46,6 +64,21 @@ class _PlayScreenState extends State<PlayScreen>
   // Current position in the sequence (loop mode only).
   int _index = 0;
   bool get _sequential => widget.stepDelays != null;
+  bool get _tempo => widget.tempoMode;
+
+  // Metronome state (tempo mode only).
+  MetronomeEngine? _metro;
+  int _beatsInChord = 0; // practice beats elapsed within the current chord
+  bool _practiceStarted = false; // false during countdown / count-in bar
+  bool _skipRequested = false; // tempo skip lands on the next downbeat
+
+  // Full-screen beat flash (tempo mode). Decays from 1 -> 0 on every beat.
+  late final AnimationController _flash;
+  Color _flashColor = Colors.white;
+  double _flashWidth = 14;
+
+  int get _barsForCurrent =>
+      _sequential ? widget.stepDelays![_index] : widget.barsPerChord;
 
   // Total elapsed practice time (pauses while practice is paused).
   final Stopwatch _watch = Stopwatch();
@@ -76,15 +109,34 @@ class _PlayScreenState extends State<PlayScreen>
 
     _progress = AnimationController(
       vsync: this,
-      duration: Duration(
-          seconds: _sequential ? widget.stepDelays![0] : widget.delaySeconds),
+      duration: _tempo
+          ? _barDuration(_barsForCurrent)
+          : Duration(
+              seconds: _sequential ? widget.stepDelays![0] : widget.delaySeconds),
     )..addStatusListener((status) {
-        if (status == AnimationStatus.completed && !_paused) {
+        // In tempo mode the metronome drives advancement, not the bar filling.
+        if (!_tempo && status == AnimationStatus.completed && !_paused) {
           _advance();
         }
       });
 
+    _flash = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    );
+
+    if (_tempo) {
+      _metro = MetronomeEngine(bpm: widget.bpm, beatsPerBar: widget.beatsPerBar)
+        ..onBeat = _onBeat;
+      _metro!.load();
+    }
+
     _startCountdown();
+  }
+
+  Duration _barDuration(int bars) {
+    final ms = (bars * widget.beatsPerBar * 60000.0 / widget.bpm).round();
+    return Duration(milliseconds: ms);
   }
 
   void _startCountdown() {
@@ -99,8 +151,20 @@ class _PlayScreenState extends State<PlayScreen>
   }
 
   void _beginPractice() {
+    if (_tempo) {
+      // Start the metronome; _onBeat plays one count-in bar, then begins the
+      // practice clock and chord advancement on the next downbeat.
+      _metro!.start();
+    } else {
+      _startPracticeClock();
+      _progress.forward();
+    }
+  }
+
+  // Starts the session clock + the 1s ticker (session limit / elapsed display).
+  void _startPracticeClock() {
+    _practiceStarted = true;
     _watch.start();
-    _progress.forward();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       final limit = widget.sessionLimit;
@@ -112,6 +176,45 @@ class _PlayScreenState extends State<PlayScreen>
     });
     // Starting a session clears the widget reminder.
     PracticeReminder.markPracticed();
+  }
+
+  // Metronome callback (tempo mode). The first bar is a count-in; practice
+  // (clock + chord changes) begins on the downbeat after it.
+  // Flash the whole screen edge on a beat: accent + bigger on the downbeat.
+  void _pulseFlash(bool isDown) {
+    if (!widget.beatFlash) return;
+    _flashColor = isDown ? Theme.of(context).colorScheme.primary : Colors.white;
+    _flashWidth = isDown ? 34 : 18;
+    _flash.value = 1.0;
+    _flash.animateTo(0, curve: Curves.easeOut);
+  }
+
+  void _onBeat(int globalIndex, int beatInBar, bool isDown) {
+    if (!mounted || _paused) return;
+    _pulseFlash(isDown);
+    final countInBeats = widget.beatsPerBar; // one bar of count-in
+    if (globalIndex < countInBeats) {
+      setState(() {}); // flash the beat dot during the count-in
+      return;
+    }
+    if (globalIndex == countInBeats) {
+      // First practice beat lands on this downbeat.
+      _startPracticeClock();
+      _beatsInChord = 0;
+      _progress
+        ..duration = _barDuration(_barsForCurrent)
+        ..reset()
+        ..forward();
+    }
+    _beatsInChord++;
+    final reachedEnd = _beatsInChord > _barsForCurrent * widget.beatsPerBar;
+    final skipNow = _skipRequested && isDown;
+    if (reachedEnd || skipNow) {
+      _skipRequested = false;
+      _advance();
+      _beatsInChord = 1; // this downbeat is beat 1 of the new chord
+    }
+    setState(() {}); // flash the beat dot
   }
 
   Future<void> _finish() async {
@@ -131,6 +234,7 @@ class _PlayScreenState extends State<PlayScreen>
   void _restart() {
     _ticker?.cancel();
     _countdownTimer?.cancel();
+    _metro?.stop();
     _progress.reset();
     _watch
       ..stop()
@@ -139,15 +243,21 @@ class _PlayScreenState extends State<PlayScreen>
       _finished = false;
       _sessionRecorded = false;
       _paused = false;
+      _practiceStarted = false;
+      _skipRequested = false;
+      _beatsInChord = 0;
       if (_sequential) {
         _index = 0;
         _current = widget.chords[0];
         _next = widget.chords[1 % widget.chords.length];
-        _progress.duration = Duration(seconds: widget.stepDelays![0]);
       } else {
         _current = _randomChord(exclude: null);
         _next = _randomChord(exclude: _current);
       }
+      _progress.duration = _tempo
+          ? _barDuration(_barsForCurrent)
+          : Duration(
+              seconds: _sequential ? widget.stepDelays![0] : widget.delaySeconds);
     });
     _startCountdown();
   }
@@ -174,10 +284,14 @@ class _PlayScreenState extends State<PlayScreen>
         _index = (_index + 1) % n;
         _current = widget.chords[_index];
         _next = widget.chords[(_index + 1) % n];
-        _progress.duration = Duration(seconds: widget.stepDelays![_index]);
       } else {
         _current = _next;
         _next = _randomChord(exclude: _current);
+      }
+      if (_tempo) {
+        _progress.duration = _barDuration(_barsForCurrent);
+      } else if (_sequential) {
+        _progress.duration = Duration(seconds: widget.stepDelays![_index]);
       }
     });
     _progress
@@ -189,16 +303,28 @@ class _PlayScreenState extends State<PlayScreen>
     setState(() {
       _paused = !_paused;
       if (_paused) {
-        _progress.stop();
-        _watch.stop();
+        _metro?.pause();
+        if (_practiceStarted) {
+          _progress.stop();
+          _watch.stop();
+        }
       } else {
-        _progress.forward();
-        _watch.start();
+        _metro?.resume();
+        if (_practiceStarted) {
+          _progress.forward();
+          _watch.start();
+        }
       }
     });
   }
 
-  void _skip() => _advance();
+  void _skip() {
+    if (_tempo) {
+      _skipRequested = true; // advance on the next downbeat, staying in time
+    } else {
+      _advance();
+    }
+  }
 
   @override
   void dispose() {
@@ -209,10 +335,62 @@ class _PlayScreenState extends State<PlayScreen>
     }
     _countdownTimer?.cancel();
     _ticker?.cancel();
+    _metro?.dispose();
+    _flash.dispose();
     _progress.dispose();
     WakelockPlus.disable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
+  }
+
+  // Row of beat dots that flash with the metronome; downbeat in the accent
+  // colour. The first bar (count-in) shows a small label.
+  Widget _beatDots(ColorScheme scheme) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: ValueListenableBuilder<int>(
+        valueListenable: _metro!.beatInBar,
+        builder: (_, beat, _) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(widget.beatsPerBar, (i) {
+                  final active = beat == i + 1;
+                  final isDown = i == 0;
+                  final color = active
+                      ? (isDown ? scheme.primary : Colors.white)
+                      : Colors.white24;
+                  final size = active ? 22.0 : 11.0;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 90),
+                      width: size,
+                      height: size,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                        boxShadow: active
+                            ? [BoxShadow(color: color.withValues(alpha: 0.6), blurRadius: 10)]
+                            : null,
+                      ),
+                    ),
+                  );
+                }),
+              ),
+              if (!_practiceStarted)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text('count-in • ${widget.bpm} BPM',
+                      style: TextStyle(color: scheme.primary, fontSize: 11)),
+                ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   String _formatLong(Duration d) {
@@ -261,6 +439,9 @@ class _PlayScreenState extends State<PlayScreen>
               ),
             ),
 
+            // Metronome beat dots (tempo mode only).
+            if (_tempo && _metro != null) _beatDots(scheme),
+
             // Current chord — name + big fretboard, fills the free space.
             Expanded(
               child: Padding(
@@ -307,8 +488,39 @@ class _PlayScreenState extends State<PlayScreen>
           ],
             ),
           ),
+          if (_tempo && widget.beatFlash) _flashOverlay(),
           if (_countdown > 0) _countdownOverlay(scheme),
         ],
+      ),
+    );
+  }
+
+  // A screen-edge glow that flashes on every beat (brighter on the downbeat).
+  Widget _flashOverlay() {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: AnimatedBuilder(
+          animation: _flash,
+          builder: (_, _) {
+            final v = _flash.value;
+            if (v <= 0.01) return const SizedBox.shrink();
+            return DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: _flashColor.withValues(alpha: v * 0.9),
+                  width: _flashWidth * v,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: _flashColor.withValues(alpha: v * 0.35),
+                    blurRadius: 24 * v,
+                    spreadRadius: 2 * v,
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
